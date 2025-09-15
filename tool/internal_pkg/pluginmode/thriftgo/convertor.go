@@ -434,6 +434,8 @@ func (c *converter) makeService(pkg generator.PkgInfo, svc *golang.Service) (*ge
 }
 
 func (c *converter) makeMethod(si *generator.ServiceInfo, f *golang.Function) (*generator.MethodInfo, error) {
+	fmt.Printf("=== KITEX FIXED VERSION - 正在生成方法: %s.%s (服务: %s) ===\n", si.ServiceName, f.Name, si.ServiceName)
+
 	st, err := streaming.ParseStreaming(f.Function)
 	if err != nil {
 		return nil, err
@@ -465,6 +467,14 @@ func (c *converter) makeMethod(si *generator.ServiceInfo, f *golang.Function) (*
 	}
 	if !f.Void {
 		typeName := f.ResponseGoTypeName().String()
+
+		if !strings.Contains(typeName, ".") {
+			if ref := f.FunctionType.GetReference(); ref != nil {
+				inc := c.Utils.RootScope().Includes().ByIndex(int(ref.GetIndex()))
+				typeName = inc.PackageName + "." + typeName
+			}
+		}
+
 		mi.Resp = &generator.Parameter{
 			Deps: c.getImports(f.FunctionType),
 			Type: typeName,
@@ -473,20 +483,54 @@ func (c *converter) makeMethod(si *generator.ServiceInfo, f *golang.Function) (*
 	}
 
 	for _, a := range f.Arguments() {
+		// 修复参数类型名称问题
+		typeName := a.GoTypeName().String()
+
+		if !strings.Contains(typeName, ".") {
+			if ref := a.Type.GetReference(); ref != nil {
+				inc := c.Utils.RootScope().Includes().ByIndex(int(ref.GetIndex()))
+				typeName = inc.PackageName + "." + typeName
+			}
+		}
+
 		arg := &generator.Parameter{
 			Deps:    c.getImports(a.Type),
 			Name:    f.ArgType().Field(a.Name).GoName().String(),
 			RawName: a.GoName().String(),
-			Type:    a.GoTypeName().String(),
+			Type:    typeName,
 		}
 		mi.Args = append(mi.Args, arg)
 	}
 	for _, t := range f.Throws() {
+		// 修复异常类型名称问题
+		typeName := t.GoTypeName().String()
+
+		if typeName == "*" || !strings.Contains(typeName, ".") {
+			// 如果类型名是 * 或不包含包前缀，重新构建
+			if ref := t.Type.GetReference(); ref != nil {
+				inc := c.Utils.RootScope().Includes().ByIndex(int(ref.GetIndex()))
+
+				baseTypeName := t.Type.Name
+				if baseTypeName == "" {
+					baseTypeName = t.Type.GetName()
+				}
+				if baseTypeName == "" {
+					baseTypeName = inc.PackageName
+				}
+
+				if strings.Contains(baseTypeName, ".") {
+					typeName = "*" + baseTypeName
+				} else {
+					typeName = "*" + inc.PackageName + "." + baseTypeName
+				}
+			}
+		}
+
 		ex := &generator.Parameter{
 			Deps:    c.getImports(t.Type),
 			Name:    f.ResType().Field(t.Name).GoName().String(),
 			RawName: t.GoName().String(),
-			Type:    t.GoTypeName().String(),
+			Type:    typeName,
 		}
 		mi.Exceptions = append(mi.Exceptions, ex)
 	}
