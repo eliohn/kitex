@@ -35,6 +35,9 @@ type NewFieldMapping func(value string) FiledMapping
 // GoTagAnnatition go.tag annatation define
 var GoTagAnnatition = NewBAMAnnotation("go.tag", NewGoTag)
 
+// FieldExpandAnnotation thrift.expand annotation define
+var FieldExpandAnnotation = NewBAMAnnotation("thrift.expand", NewFieldExpand)
+
 // go.tag = 'json:"xx"'
 type goTag struct {
 	tag reflect.StructTag
@@ -58,4 +61,18 @@ func (m *goTag) Handle(field *FieldDescriptor) {
 	} else {
 		field.Alias = tag
 	}
+}
+
+// fieldExpand thrift.expand annotation handler
+type fieldExpand struct {
+	shouldExpand bool
+}
+
+// NewFieldExpand thrift.expand annotation creator
+var NewFieldExpand NewFieldMapping = func(value string) FiledMapping {
+	return &fieldExpand{shouldExpand: value == "true"}
+}
+
+func (m *fieldExpand) Handle(field *FieldDescriptor) {
+	field.IsExpandable = m.shouldExpand
 }

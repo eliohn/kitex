@@ -48,6 +48,7 @@ func init() {
 	RegisterAnnotation(APIDeleteAnnotation)
 	// FieldMapping
 	RegisterAnnotation(GoTagAnnatition)
+	RegisterAnnotation(FieldExpandAnnotation)
 	// ValueMapping
 	RegisterAnnotation(APIJSConvAnnotation)
 	// none annotation

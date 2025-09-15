@@ -1,6 +1,8 @@
 module github.com/cloudwego/kitex
 
-go 1.19
+go 1.23.0
+
+replace github.com/cloudwego/thriftgo v0.4.2 => D:\workspace\project_go\thriftgo
 
 require (
 	github.com/bytedance/gopkg v0.1.2

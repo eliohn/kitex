@@ -75,6 +75,8 @@ func (p *{{$TypeName}}) FastRead(buf []byte) (int, error) {
 		{{if gt (len .Fields) 0 -}}
 		switch fieldId {
 		{{- range .Fields}}
+		{{- if .IsExpandable}}
+		{{- range .ExpandedFields}}
 		case {{.ID}}:
 			if fieldTypeId == thrift.{{.Type | GetTypeIDConstant }} {
 				l, err = p.FastReadField{{Str .ID}}(buf[offset:])
@@ -92,6 +94,26 @@ func (p *{{$TypeName}}) FastRead(buf []byte) (int, error) {
 					goto SkipFieldError
 				}
 			}
+		{{- end}}{{/* range .ExpandedFields */}}
+		{{- else}}
+		case {{.ID}}:
+			if fieldTypeId == thrift.{{.Type | GetTypeIDConstant }} {
+				l, err = p.FastReadField{{Str .ID}}(buf[offset:])
+				offset += l
+				if err != nil {
+					goto ReadFieldError
+				}
+				{{- if .Requiredness.IsRequired}}
+				isset{{.GoName}} = true
+				{{- end}}
+			} else {
+				l, err = thrift.Binary.Skip(buf[offset:], fieldTypeId)
+				offset += l
+				if err != nil {
+					goto SkipFieldError
+				}
+			}
+		{{- end}}{{/* if .IsExpandable */}}
 		{{- end}}{{/* range .Fields */}}
 		default:
 			l, err = thrift.Binary.Skip(buf[offset:], fieldTypeId)
@@ -153,6 +175,34 @@ const StructLikeFastReadField = `
 {{- if not (UseFrugalForStruct .) }}
 {{- $TypeName := .GoName}}
 {{- range .Fields}}
+{{- if .IsExpandable}}
+{{- range .ExpandedFields}}
+{{$ExpandedFieldName := .GoName}}
+{{- $isExpandedBaseVal := .Type | IsBaseType}}
+func (p *{{$TypeName}}) FastReadField{{Str .ID}}(buf []byte) (int, error) {
+	offset := 0
+	{{- if Features.WithFieldMask}}
+	if {{if $isExpandedBaseVal}}_{{else}}fm{{end}}, ex := p._fieldmask.Field({{.ID}}); ex {
+	{{- end}}
+		{{- $ctx := (MkRWCtx .).WithFieldMask "fm" -}}
+		{{- $target := print $ctx.Target }}
+		{{- $ctx = $ctx.WithDecl.WithTarget "_field"}}
+		{{ template "FieldFastRead" $ctx}}
+		{{/* line break */}}
+		{{- $target}} = _field
+	{{- if Features.WithFieldMask}}
+	} else {
+		l, err := thrift.Binary.Skip(buf[offset:], thrift.{{.Type | GetTypeIDConstant}})
+		offset += l
+		if err != nil {
+			return offset, err
+		}
+	}
+	{{- end}}
+	return offset, nil
+}
+{{- end}}{{/* range .ExpandedFields */}}
+{{- else}}
 {{$FieldName := .GoName}}
 {{- $isBaseVal := .Type | IsBaseType}}
 func (p *{{$TypeName}}) FastReadField{{Str .ID}}(buf []byte) (int, error) {
@@ -177,6 +227,7 @@ func (p *{{$TypeName}}) FastReadField{{Str .ID}}(buf []byte) (int, error) {
 	{{- end}}
 	return offset, nil
 }
+{{- end}}{{/* if .IsExpandable */}}
 {{- end}}{{/* range .Fields */}}
 {{- end}}{{/* if not (UseFrugalForStruct .) */}}
 {{- end}}{{/* define "StructLikeFastReadField" */}}
@@ -244,10 +295,15 @@ func (p *{{$TypeName}}) FastWriteNocopy(buf []byte, w thrift.NocopyWriter) int {
 	}
 	{{- end}}
 	if p != nil {
-		{{- $reorderedFields := ReorderStructFields .Fields}}
-		{{- range $reorderedFields}}
+		{{- range .Fields}}
+		{{- if .IsExpandable}}
+		{{- range .ExpandedFields}}
 		offset += p.fastWriteField{{Str .ID}}(buf[offset:], w)
-		{{- end}}
+		{{- end}}{{/* range .ExpandedFields */}}
+		{{- else}}
+		offset += p.fastWriteField{{Str .ID}}(buf[offset:], w)
+		{{- end}}{{/* if .IsExpandable */}}
+		{{- end}}{{/* range .Fields */}}
 		{{- if Features.KeepUnknownFields}}
 		offset += copy(buf[offset:], p._unknownFields)
 		{{- end}}{{/* if Features.KeepUnknownFields */}}
@@ -282,8 +338,14 @@ func (p *{{$TypeName}}) BLength() int {
 	{{- end}}
 	if p != nil {
 		{{- range .Fields}}
+		{{- if .IsExpandable}}
+		{{- range .ExpandedFields}}
+		l += p.field{{Str .ID}}Length()
+		{{- end}}{{/* range .ExpandedFields */}}
+		{{- else}}
 		{{- $isBaseVal := .Type | IsBaseType}}
 		l += p.field{{Str .ID}}Length()
+		{{- end}}{{/* if .IsExpandable */}}
 		{{- end}}{{/* range.Fields */}}
 		{{- if Features.KeepUnknownFields}}
 		l += len(p._unknownFields)
@@ -305,6 +367,45 @@ const StructLikeFastWriteField = `
 {{- if not (UseFrugalForStruct .) }}
 {{- $TypeName := .GoName}}
 {{- range .Fields}}
+{{- if .IsExpandable}}
+{{- range .ExpandedFields}}
+{{- $ExpandedFieldName := .GoName}}
+{{- $ExpandedTypeID := .Type | GetTypeIDConstant }}
+{{- $isExpandedBaseVal := .Type | IsBaseType}}
+func (p *{{$TypeName}}) fastWriteField{{Str .ID}}(buf []byte, w thrift.NocopyWriter) int {
+	offset := 0
+	{{- if .Requiredness.IsOptional}}
+	if p.{{.IsSetter}}() {
+	{{- end}}
+		{{- if Features.WithFieldMask}}
+		{{- if and .Requiredness.IsRequired (not Features.FieldMaskZeroRequired)}}
+		{{- if not $isExpandedBaseVal}}
+		fm, _ := p._fieldmask.Field({{.ID}})
+		{{- end}}
+		{{- else}}
+		if {{if $isExpandedBaseVal}}_{{else}}fm{{end}}, ex := p._fieldmask.Field({{.ID}}); ex { 
+		{{- end}}
+		{{- end}}
+			offset += thrift.Binary.WriteFieldBegin(buf[offset:], thrift.{{$ExpandedTypeID}}, {{.ID}})
+			{{- $ctx := (MkRWCtx .).WithFieldMask "fm"}}
+			{{- template "FieldFastWrite" $ctx}}
+		{{- if Features.WithFieldMask}}
+		{{- if Features.FieldMaskZeroRequired}}
+		} else {
+			offset += thrift.Binary.WriteFieldBegin(buf[offset:], thrift.{{$ExpandedTypeID}}, {{.ID}})
+			{{ ZeroWriter .Type "thrift.Binary" "buf[offset:]" "offset" -}}
+		}
+		{{- else if not .Requiredness.IsRequired}}
+		}
+		{{- end}}
+		{{- end}}
+	{{- if .Requiredness.IsOptional}}
+	}
+	{{- end}}
+	return offset
+}
+{{- end}}{{/* range .ExpandedFields */}}
+{{- else}}
 {{- $FieldName := .GoName}}
 {{- $TypeID := .Type | GetTypeIDConstant }}
 {{- $isBaseVal := .Type | IsBaseType}}
@@ -340,6 +441,7 @@ func (p *{{$TypeName}}) fastWriteField{{Str .ID}}(buf []byte, w thrift.NocopyWri
 	{{- end}}
 	return offset
 }
+{{- end}}{{/* if .IsExpandable */}}
 {{end}}{{/* range .Fields */}}
 {{- end}}{{/* if not (UseFrugalForStruct .) */}}
 {{- end}}{{/* define "StructLikeFastWriteField" */}}
@@ -350,6 +452,45 @@ const StructLikeFieldLength = `
 {{- if not (UseFrugalForStruct .) }}
 {{- $TypeName := .GoName}}
 {{- range .Fields}}
+{{- if .IsExpandable}}
+{{- range .ExpandedFields}}
+{{- $ExpandedFieldName := .GoName}}
+{{- $ExpandedTypeID := .Type | GetTypeIDConstant }}
+{{- $isExpandedBaseVal := .Type | IsBaseType}}
+func (p *{{$TypeName}}) field{{Str .ID}}Length() int {
+	l := 0
+	{{- if .Requiredness.IsOptional}}
+	if p.{{.IsSetter}}() {
+	{{- end}}
+		{{- if Features.WithFieldMask}}
+		{{- if and .Requiredness.IsRequired (not Features.FieldMaskZeroRequired)}}
+		{{- if not $isExpandedBaseVal}}
+		fm, _ := p._fieldmask.Field({{.ID}})
+		{{- end}}
+		{{- else}}
+		if {{if $isExpandedBaseVal}}_{{else}}fm{{end}}, ex := p._fieldmask.Field({{.ID}}); ex {
+		{{- end}}
+		{{- end}}
+			l += thrift.Binary.FieldBeginLength()
+			{{- $ctx := (MkRWCtx .).WithFieldMask "fm"}}
+			{{- template "FieldLength" $ctx}}
+		{{- if Features.WithFieldMask}}
+		{{- if Features.FieldMaskZeroRequired}}
+		} else {
+			l += thrift.Binary.FieldBeginLength()
+			{{ ZeroBLength .Type "thrift.Binary" "l" -}}
+		}
+		{{- else if not .Requiredness.IsRequired}}
+		}
+		{{- end}}
+		{{- end}}
+	{{- if .Requiredness.IsOptional}}
+	}
+	{{- end}}
+	return l
+}
+{{- end}}{{/* range .ExpandedFields */}}
+{{- else}}
 {{- $FieldName := .GoName}}
 {{- $TypeID := .Type | GetTypeIDConstant }}
 {{- $isBaseVal := .Type | IsBaseType}}
@@ -385,6 +526,7 @@ func (p *{{$TypeName}}) field{{Str .ID}}Length() int {
 	{{- end}}
 	return l
 }
+{{- end}}{{/* if .IsExpandable */}}
 {{end}}{{/* range .Fields */}}
 {{- end}}{{/* if not (UseFrugalForStruct .) */}}
 {{- end}}{{/* define "StructLikeFieldLength" */}}

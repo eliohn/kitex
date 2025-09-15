@@ -445,6 +445,27 @@ func parseType(t *parser.Type, tree *parser.Thrift, cache map[string]*descriptor
 			if _f.Type, err = parseType(field.Type, tree, cache, nextRecursionDepth, opt); err != nil {
 				return nil, err
 			}
+
+			// 处理字段展开逻辑
+			if _f.IsExpandable && _f.Type != nil && _f.Type.Struct != nil {
+				// 检查引用的结构体是否标记为可展开
+				referencedStruct := findReferencedStruct(tree, field.Type.Name)
+				if referencedStruct != nil && isStructExpandable(referencedStruct) {
+					// 创建展开字段
+					expandedFields := createExpandedFields(field, referencedStruct, tree, cache, nextRecursionDepth, opt)
+					_f.ExpandedFields = expandedFields
+
+					// 将展开字段添加到结构体描述符中
+					for _, expandedField := range expandedFields {
+						ty.Struct.FieldsByID[expandedField.ID] = expandedField
+						ty.Struct.FieldsByName[expandedField.FieldName()] = expandedField
+						if expandedField.Required {
+							ty.Struct.RequiredFields[expandedField.ID] = expandedField
+						}
+					}
+				}
+			}
+
 			// set default value
 			if field.IsSetDefault() {
 				_f.DefaultValue, err = parse(tree, field.Name, field.Type, field.Default)
@@ -807,4 +828,89 @@ func bin2str(t *parser.Type) *parser.Type {
 		return &r
 	}
 	return t
+}
+
+// findReferencedStruct 查找引用的结构体
+func findReferencedStruct(tree *parser.Thrift, typeName string) *parser.StructLike {
+	// 首先在当前文件中查找
+	for _, st := range tree.Structs {
+		if st.Name == typeName {
+			return st
+		}
+	}
+	for _, st := range tree.Unions {
+		if st.Name == typeName {
+			return st
+		}
+	}
+	for _, st := range tree.Exceptions {
+		if st.Name == typeName {
+			return st
+		}
+	}
+
+	// 在包含的文件中查找
+	for _, inc := range tree.Includes {
+		if inc.Reference != nil {
+			if st := findReferencedStruct(inc.Reference, typeName); st != nil {
+				return st
+			}
+		}
+	}
+
+	return nil
+}
+
+// isStructExpandable 检查结构体是否标记为可展开
+func isStructExpandable(st *parser.StructLike) bool {
+	// 检查结构体是否有 Expandable = true 的注解
+	for _, ann := range st.Annotations {
+		if ann.GetKey() == "expandable" {
+			for _, v := range ann.GetValues() {
+				if v == "true" {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// createExpandedFields 创建展开字段
+func createExpandedFields(originalField *parser.Field, referencedStruct *parser.StructLike, tree *parser.Thrift, cache map[string]*descriptor.TypeDescriptor, recursionDepth int, opt *parseOptions) []*descriptor.FieldDescriptor {
+	var expandedFields []*descriptor.FieldDescriptor
+
+	for _, structField := range referencedStruct.Fields {
+		// 创建调整后的字段，避免ID冲突
+		adjustedField := *structField
+		adjustedField.ID = structField.ID + (originalField.ID * 1000)
+
+		// 创建字段描述符
+		expandedField := &descriptor.FieldDescriptor{
+			ID:       adjustedField.ID,
+			Name:     structField.Name,
+			Required: structField.Requiredness == parser.FieldType_Required,
+			Optional: structField.Requiredness == parser.FieldType_Optional,
+		}
+
+		if opt != nil {
+			expandedField.GoTagOpt = opt.goTag
+		}
+
+		// 解析字段类型
+		if fieldType, err := parseType(adjustedField.Type, tree, cache, recursionDepth, opt); err == nil {
+			expandedField.Type = fieldType
+		}
+
+		// 设置默认值
+		if adjustedField.IsSetDefault() {
+			if defaultValue, err := parse(tree, structField.Name, adjustedField.Type, adjustedField.Default); err == nil {
+				expandedField.DefaultValue = defaultValue
+			}
+		}
+
+		expandedFields = append(expandedFields, expandedField)
+	}
+
+	return expandedFields
 }

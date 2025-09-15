@@ -30,17 +30,19 @@ var isGoTagAliasDisabled = os.Getenv("KITEX_GENERIC_GOTAG_ALIAS_DISABLED") == "T
 
 // FieldDescriptor idl field descriptor
 type FieldDescriptor struct {
-	Name         string // field name
-	Alias        string // alias name
-	ID           int32
-	Required     bool
-	Optional     bool
-	DefaultValue interface{}
-	IsException  bool
-	Type         *TypeDescriptor
-	HTTPMapping  HTTPMapping
-	ValueMapping ValueMapping
-	GoTagOpt     *GoTagOption
+	Name           string // field name
+	Alias          string // alias name
+	ID             int32
+	Required       bool
+	Optional       bool
+	DefaultValue   interface{}
+	IsException    bool
+	Type           *TypeDescriptor
+	HTTPMapping    HTTPMapping
+	ValueMapping   ValueMapping
+	GoTagOpt       *GoTagOption
+	IsExpandable   bool               // 是否可展开
+	ExpandedFields []*FieldDescriptor // 展开后的字段列表
 }
 
 type GoTagOption struct {
