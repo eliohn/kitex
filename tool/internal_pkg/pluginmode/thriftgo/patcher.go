@@ -16,6 +16,7 @@ package thriftgo
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -584,6 +585,7 @@ func (p *Patcher) collectTypeDependencies(t *parser.Type, scope *golang.Scope) {
 				for _, include := range scope.Includes() {
 					if include.PackageName == packageName {
 						foundInclude = include
+						log.Printf("[ DEBUG ] Found include: %s ", include.ImportPath)
 						break
 					}
 				}
@@ -592,29 +594,37 @@ func (p *Patcher) collectTypeDependencies(t *parser.Type, scope *golang.Scope) {
 
 		// 如果通过包名找到了 include，直接使用
 		if foundInclude != nil {
+			log.Printf("[ DEBUG ] Using include 1: %s , %s", foundInclude.ImportPath, foundInclude.PackageName)
 			p.UseLib(foundInclude.ImportPath, foundInclude.PackageName)
 		} else {
+			log.Printf("[ DEBUG ] Trying to find include for type: %s", t.Name)
 			// 如果通过包名没找到，尝试从已收集的 libs 中查找
 			if strings.Contains(t.Name, ".") {
 				parts := strings.Split(t.Name, ".")
 				if len(parts) > 1 {
 					packageName := parts[0]
-
+					found := false
 					// 查找已收集的 libs 中是否有该包
 					for _, alias := range p.libs {
 						if alias == packageName {
-							// 不需要重复添加，因为已经在 p.libs 中了
+							found = true
 							break
 						}
 					}
-				}
-			}
-
-			if ref := t.GetReference(); ref != nil {
-				// 如果通过包名没找到，再尝试通过引用索引查找
-				inc := scope.Includes().ByIndex(int(ref.GetIndex()))
-				if inc != nil {
-					p.UseLib(inc.ImportPath, inc.PackageName)
+					if ref := t.GetReference(); ref != nil && found == false {
+						for _, inc := range scope.Includes() {
+							for _, refInc := range inc.Includes() {
+								if refInc.PackageName == packageName {
+									p.UseLib(refInc.ImportPath, refInc.PackageName)
+									found = true
+									break
+								}
+							}
+							if found {
+								break
+							}
+						}
+					}
 				}
 			}
 		}
