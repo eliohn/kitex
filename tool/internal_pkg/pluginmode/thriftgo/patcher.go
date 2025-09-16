@@ -148,7 +148,6 @@ func (p *Patcher) buildTemplates() (err error) {
 	m["FieldName"] = func(s string) string {
 		// 直接使用 thriftgo 的字段名生成逻辑
 		// 使用 common.UpperFirstRune 来生成字段名，这样会正确处理 ID 等缩写词
-		fmt.Println(" --------------------  s", s)
 		if len(s) > 2 && s[:2] == "p." {
 			fieldName := s[2:]
 			// 使用 thriftgo 的 common.UpperFirstRune 方法
