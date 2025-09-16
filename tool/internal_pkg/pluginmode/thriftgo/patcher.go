@@ -16,7 +16,6 @@ package thriftgo
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -26,6 +25,7 @@ import (
 	"text/template"
 
 	"github.com/cloudwego/thriftgo/generator/golang"
+	"github.com/cloudwego/thriftgo/generator/golang/common"
 	"github.com/cloudwego/thriftgo/generator/golang/templates"
 	"github.com/cloudwego/thriftgo/generator/golang/templates/slim"
 	"github.com/cloudwego/thriftgo/parser"
@@ -146,8 +146,16 @@ func (p *Patcher) buildTemplates() (err error) {
 		return s[1:]
 	}
 	m["FieldName"] = func(s string) string {
-		// p.XXX
-		return strings.ToLower(s[2:3]) + s[3:]
+		// 直接使用 thriftgo 的字段名生成逻辑
+		// 使用 common.UpperFirstRune 来生成字段名，这样会正确处理 ID 等缩写词
+		fmt.Println(" --------------------  s", s)
+		if len(s) > 2 && s[:2] == "p." {
+			fieldName := s[2:]
+			// 使用 thriftgo 的 common.UpperFirstRune 方法
+			return common.UpperFirstRune(fieldName)
+		}
+		// 如果不是 p.XXX 格式，直接返回
+		return s
 	}
 	m["IsHessian"] = func() bool {
 		return p.IsHessian2()
@@ -540,14 +548,11 @@ func (p *Patcher) collectExpandedFieldsDependencies(scope *golang.Scope) {
 		for _, field := range st.Fields() {
 			if field.IsExpandable() {
 				for _, expandedField := range field.ExpandedFields() {
-					// 收集展开字段类型的直接依赖
 					p.collectTypeDependencies(expandedField.Type, scope)
-					// 如果展开字段的类型包含命名空间，尝试从 includes 中查找对应的包
 					if strings.Contains(expandedField.Type.Name, ".") {
 						parts := strings.Split(expandedField.Type.Name, ".")
 						if len(parts) >= 2 {
 							packageName := parts[0]
-							// 查找匹配的 include
 							for _, include := range scope.Includes() {
 								if include.PackageName == packageName {
 									break
@@ -575,17 +580,14 @@ func (p *Patcher) collectTypeDependencies(t *parser.Type, scope *golang.Scope) {
 	case "set", "list":
 		p.collectTypeDependencies(t.ValueType, scope)
 	default:
-		// 首先尝试从类型名称中提取包名并查找匹配的 include
 		var foundInclude *golang.Include
 		if strings.Contains(t.Name, ".") {
 			parts := strings.Split(t.Name, ".")
 			if len(parts) > 1 {
 				packageName := parts[0]
-				// 查找匹配的 include
 				for _, include := range scope.Includes() {
 					if include.PackageName == packageName {
 						foundInclude = include
-						log.Printf("[ DEBUG ] Found include: %s ", include.ImportPath)
 						break
 					}
 				}
@@ -594,17 +596,13 @@ func (p *Patcher) collectTypeDependencies(t *parser.Type, scope *golang.Scope) {
 
 		// 如果通过包名找到了 include，直接使用
 		if foundInclude != nil {
-			log.Printf("[ DEBUG ] Using include 1: %s , %s", foundInclude.ImportPath, foundInclude.PackageName)
 			p.UseLib(foundInclude.ImportPath, foundInclude.PackageName)
 		} else {
-			log.Printf("[ DEBUG ] Trying to find include for type: %s", t.Name)
-			// 如果通过包名没找到，尝试从已收集的 libs 中查找
 			if strings.Contains(t.Name, ".") {
 				parts := strings.Split(t.Name, ".")
 				if len(parts) > 1 {
 					packageName := parts[0]
 					found := false
-					// 查找已收集的 libs 中是否有该包
 					for _, alias := range p.libs {
 						if alias == packageName {
 							found = true
