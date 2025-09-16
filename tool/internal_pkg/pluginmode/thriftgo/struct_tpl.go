@@ -54,7 +54,9 @@ func (p *{{$TypeName}}) FastRead(buf []byte) (int, error) {
 	var fieldId int16
 	{{- range .Fields}}
 	{{- if .Requiredness.IsRequired}}
+	{{- if not .IsExpandable}}
 	var isset{{.GoName}} bool = false
+	{{- end}}
 	{{- end}}
 	{{- if .IsExpandable}}
 	{{- range .ExpandedFields}}
@@ -110,7 +112,7 @@ func (p *{{$TypeName}}) FastRead(buf []byte) (int, error) {
 				if err != nil {
 					goto ReadFieldError
 				}
-				{{- if .Requiredness.IsRequired}}
+				{{- if and .Requiredness.IsRequired (not .IsExpandable)}}
 				isset{{.GoName}} = true
 				{{- end}}
 			} else {
@@ -152,11 +154,13 @@ func (p *{{$TypeName}}) FastRead(buf []byte) (int, error) {
 	{{ $NeedRequiredFieldNotSetError := false }}
 	{{- range .Fields}}
 	{{- if .Requiredness.IsRequired}}
+	{{- if not .IsExpandable}}
 	{{ $NeedRequiredFieldNotSetError = true }}
 	if !isset{{.GoName}} {
 		fieldId = {{.ID}}
 		goto RequiredFieldNotSetError
 	}
+	{{- end}}
 	{{- end}}
 	{{- if .IsExpandable}}
 	{{- range .ExpandedFields}}
