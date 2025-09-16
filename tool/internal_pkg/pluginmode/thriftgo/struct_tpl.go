@@ -56,6 +56,13 @@ func (p *{{$TypeName}}) FastRead(buf []byte) (int, error) {
 	{{- if .Requiredness.IsRequired}}
 	var isset{{.GoName}} bool = false
 	{{- end}}
+	{{- if .IsExpandable}}
+	{{- range .ExpandedFields}}
+	{{- if .Requiredness.IsRequired}}
+	var isset{{.GoName}} bool = false
+	{{- end}}
+	{{- end}}
+	{{- end}}
 	{{- end}}
 	for {
 		{{- if Features.KeepUnknownFields}}
@@ -150,6 +157,17 @@ func (p *{{$TypeName}}) FastRead(buf []byte) (int, error) {
 		fieldId = {{.ID}}
 		goto RequiredFieldNotSetError
 	}
+	{{- end}}
+	{{- if .IsExpandable}}
+	{{- range .ExpandedFields}}
+	{{- if .Requiredness.IsRequired}}
+	{{ $NeedRequiredFieldNotSetError = true }}
+	if !isset{{.GoName}} {
+		fieldId = {{.ID}}
+		goto RequiredFieldNotSetError
+	}
+	{{- end}}
+	{{- end}}
 	{{- end}}
 	{{- end}}
 	return offset, nil
