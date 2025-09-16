@@ -286,7 +286,7 @@ func (p *Patcher) patch(req *plugin.Request) (patches []*plugin.Generated, err e
 	for ast := range trees {
 
 		// Reset libs to empty. When executing next AST, the dependencies left by previous AST should not be retained.
-		p.libs = nil
+		p.libs = make(map[string]string)
 
 		// fd.WriteString(p.utils.GetFilename(ast) + "\n")
 		// scope, err := golang.BuildScope(p.utils, ast)
@@ -319,6 +319,9 @@ func (p *Patcher) patch(req *plugin.Request) (patches []*plugin.Generated, err e
 		if scope == nil {
 			continue
 		}
+
+		// 预收集展开字段的依赖
+		p.collectExpandedFieldsDependencies(scope)
 
 		if p.IsHessian2() {
 			register := util.JoinPath(path, fmt.Sprintf("hessian2-register-%s", base))
@@ -369,6 +372,7 @@ func (p *Patcher) patch(req *plugin.Request) (patches []*plugin.Generated, err e
 			Content: content,
 			Name:    &target,
 		})
+
 		// fd.WriteString("patched: " + target + "\n")
 		// fd.WriteString("content: " + content + "\nend\n")
 
@@ -527,6 +531,94 @@ func (p *Patcher) isBinaryOrStringType(t *parser.Type) bool {
 
 func (p *Patcher) IsHessian2() bool {
 	return strings.EqualFold(p.protocol, "hessian2")
+}
+
+// collectExpandedFieldsDependencies 预收集展开字段的依赖
+func (p *Patcher) collectExpandedFieldsDependencies(scope *golang.Scope) {
+	for _, st := range scope.StructLikes() {
+		for _, field := range st.Fields() {
+			if field.IsExpandable() {
+				for _, expandedField := range field.ExpandedFields() {
+					// 收集展开字段类型的直接依赖
+					p.collectTypeDependencies(expandedField.Type, scope)
+					// 如果展开字段的类型包含命名空间，尝试从 includes 中查找对应的包
+					if strings.Contains(expandedField.Type.Name, ".") {
+						parts := strings.Split(expandedField.Type.Name, ".")
+						if len(parts) >= 2 {
+							packageName := parts[0]
+							// 查找匹配的 include
+							for _, include := range scope.Includes() {
+								if include.PackageName == packageName {
+									break
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+// collectTypeDependencies 收集类型的依赖
+func (p *Patcher) collectTypeDependencies(t *parser.Type, scope *golang.Scope) {
+
+	switch t.Name {
+	case "void":
+		return
+	case "bool", "byte", "i8", "i16", "i32", "i64", "double", "string", "binary":
+		return
+	case "map":
+		p.collectTypeDependencies(t.KeyType, scope)
+		p.collectTypeDependencies(t.ValueType, scope)
+	case "set", "list":
+		p.collectTypeDependencies(t.ValueType, scope)
+	default:
+		// 首先尝试从类型名称中提取包名并查找匹配的 include
+		var foundInclude *golang.Include
+		if strings.Contains(t.Name, ".") {
+			parts := strings.Split(t.Name, ".")
+			if len(parts) > 1 {
+				packageName := parts[0]
+				// 查找匹配的 include
+				for _, include := range scope.Includes() {
+					if include.PackageName == packageName {
+						foundInclude = include
+						break
+					}
+				}
+			}
+		}
+
+		// 如果通过包名找到了 include，直接使用
+		if foundInclude != nil {
+			p.UseLib(foundInclude.ImportPath, foundInclude.PackageName)
+		} else {
+			// 如果通过包名没找到，尝试从已收集的 libs 中查找
+			if strings.Contains(t.Name, ".") {
+				parts := strings.Split(t.Name, ".")
+				if len(parts) > 1 {
+					packageName := parts[0]
+
+					// 查找已收集的 libs 中是否有该包
+					for _, alias := range p.libs {
+						if alias == packageName {
+							// 不需要重复添加，因为已经在 p.libs 中了
+							break
+						}
+					}
+				}
+			}
+
+			if ref := t.GetReference(); ref != nil {
+				// 如果通过包名没找到，再尝试通过引用索引查找
+				inc := scope.Includes().ByIndex(int(ref.GetIndex()))
+				if inc != nil {
+					p.UseLib(inc.ImportPath, inc.PackageName)
+				}
+			}
+		}
+	}
 }
 
 var typeIDToGoType = map[string]string{
