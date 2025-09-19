@@ -138,8 +138,8 @@ func (a *Arguments) buildFlags(version string) *flag.FlagSet {
 
 	a.Version = version
 	a.ThriftOptions = append(a.ThriftOptions,
-		"naming_style=golint",
-		// "ignore_initialisms",  // 注释掉这一行，让 golint 命名风格正确处理缩写词
+		"naming_style=thriftgo",
+		//"ignore_initialisms", // 注释掉这一行，让 golint 命名风格正确处理缩写词
 		"gen_setter",
 		"validate_set=false",
 		"gen_deep_equal=false",
