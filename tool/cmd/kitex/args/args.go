@@ -149,6 +149,7 @@ func (a *Arguments) buildFlags(version string) *flag.FlagSet {
 		"frugal_tag",
 		"thrift_streaming",
 		"no_processor",
+		"reserve_comments", // 保留 Thrift IDL 中的注释内容
 	)
 
 	f.Usage = func() {
