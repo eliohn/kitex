@@ -146,11 +146,11 @@ func (p *Patcher) buildTemplates() (err error) {
 		return s[1:]
 	}
 	m["FieldName"] = func(s string) string {
-		// 直接使用 thriftgo 的字段名生成逻辑
-		// 使用 common.UpperFirstRune 来生成字段名，这样会正确处理 ID 等缩写词
+		// 自定义字段名生成逻辑，避免compatible_names规则对普通字段添加下划线
 		if len(s) > 2 && s[:2] == "p." {
 			fieldName := s[2:]
-			// 使用 thriftgo 的 common.UpperFirstRune 方法
+			// 直接使用 common.UpperFirstRune 转换，不应用 compatible_names 规则
+			// 这样可以避免 will_fail_result 被转换为 WillFailResult_
 			return common.UpperFirstRune(fieldName)
 		}
 		// 如果不是 p.XXX 格式，直接返回

@@ -145,7 +145,7 @@ func (a *Arguments) buildFlags(version string) *flag.FlagSet {
 		"gen_deep_equal=false",
 		// kitex will no longer generate apache codec, cuz it's deprecated in kitex scenario.
 		"no_default_serdes=true",
-		"compatible_names",
+		// "compatible_names", // 注释掉这一行，避免对普通字段添加下划线
 		"frugal_tag",
 		"thrift_streaming",
 		"no_processor",
