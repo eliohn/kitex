@@ -83,6 +83,8 @@ func (a *Arguments) buildFlags(version string) *flag.FlagSet {
 		"Specify the Go module name to generate go.mod.")
 	f.StringVar(&a.ServiceName, "service", "",
 		"Specify the service name to generate server side codes.")
+	f.StringVar(&a.ServerName, "server-name", "",
+		"Specify the server name for multi-handler scenarios.")
 	f.StringVar(&a.Use, "use", "",
 		"Specify the kitex_gen package to import when generate server side codes.")
 	f.BoolVar(&a.Verbose, "v", false, "") // short for -verbose

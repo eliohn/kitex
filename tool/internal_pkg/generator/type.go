@@ -42,6 +42,7 @@ type PackageInfo struct {
 	NoFastAPI        bool
 	Version          string
 	RealServiceName  string
+	ServerName       string
 	Imports          map[string]map[string]bool // import path => alias
 	ExternalKitexGen string
 	Features         []feature

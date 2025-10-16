@@ -111,6 +111,7 @@ type Config struct {
 	NoFastAPI             bool
 	ModuleName            string
 	ServiceName           string
+	ServerName            string
 	Use                   string
 	IDLType               string
 	Includes              util.StringSlice
@@ -533,6 +534,12 @@ func (g *generator) updatePackageInfo(pkg *PackageInfo) {
 	pkg.Codec = g.IDLType
 	pkg.Version = g.Version
 	pkg.RealServiceName = g.ServiceName
+	// 如果 ServerName 为空，使用 ServiceName 作为默认值
+	if g.ServerName == "" {
+		pkg.ServerName = g.ServiceName
+	} else {
+		pkg.ServerName = g.ServerName
+	}
 	pkg.Features = g.Features
 	pkg.ExternalKitexGen = g.Use
 	pkg.FrugalPretouch = g.FrugalPretouch
